@@ -18,22 +18,40 @@ data['Solo']=(data['FamilySize']==1).astype(int)
 features=['Pclass','Sex','Age','Fare','FamilySize','Solo']
 
 X = data[features].values
+
+scaler = StandardScaler()
+X = scaler.fit_transform(X)
+
 y = data['Survived'].values.astype(np.float32)
+
 
 X_tensor = torch.tensor(X, dtype=torch.float32)
 y_tensor = torch.tensor(y, dtype=torch.float32).unsqueeze(1)
 
 dataset= TensorDataset(X_tensor, y_tensor)
-X_train, X_temp, y_train, y_temp = train_test_split(X_tensor, y_tensor, test_size=0.2, random_state=42, stratify=y_tensor)
-X_val, X_test, y_val, y_test = train_test_split(X_temp, y_temp, test_size=0.5, random_state=42, stratify=y_temp)
+
+# 90-10-0 split: train and test only, no validation
+X_train, X_test, y_train, y_test = train_test_split(
+    X_tensor, y_tensor, test_size=0.1, random_state=42, stratify=y_tensor
+)
 
 train_ds = TensorDataset(X_train, y_train)
-val_ds = TensorDataset(X_val, y_val)
 test_ds = TensorDataset(X_test, y_test)
 
 train_loader = DataLoader(train_ds, batch_size=32, shuffle=True)
-val_loader = DataLoader(val_ds, batch_size=32)
 test_loader = DataLoader(test_ds, batch_size=32)
+
+# # Original 80-10-10 split with validation (commented out)
+# X_train, X_temp, y_train, y_temp = train_test_split(X_tensor, y_tensor, test_size=0.2, random_state=42, stratify=y_tensor)
+# X_val, X_test, y_val, y_test = train_test_split(X_temp, y_temp, test_size=0.5, random_state=42, stratify=y_temp)
+
+# train_ds = TensorDataset(X_train, y_train)
+# val_ds = TensorDataset(X_val, y_val)
+# test_ds = TensorDataset(X_test, y_test)
+
+# train_loader = DataLoader(train_ds, batch_size=32, shuffle=True)
+# val_loader = DataLoader(val_ds, batch_size=32)
+# test_loader = DataLoader(test_ds, batch_size=32)
 
 class FCNN(nn.Module):
     def __init__(self, input_dim):
@@ -65,16 +83,20 @@ def train_model(model, train_loader, val_loader, epochs=20):
             loss.backward()
             optimiser.step()
         
-        model.eval()
-        val_losses = []
-        with torch.no_grad():
-            for xb,yb in val_loader:
-                preds=model(xb)
-                loss=lossfn(preds, yb)
-                val_losses.append(loss.item())
-        print(f"Epoch {e+1}, Val Loss: {np.mean(val_losses):.4f}")
+        if val_loader:
+            model.eval()
+            val_losses = []
+            with torch.no_grad():
+                for xb, yb in val_loader:
+                    preds = model(xb)
+                    loss = lossfn(preds, yb)
+                    val_losses.append(loss.item())
+            print(f"Epoch {e+1}, Val Loss: {np.mean(val_losses):.4f}")
+        else:
+            print(f"Epoch {e+1} completed.")
 
-train_model(model, train_loader, val_loader)
+#train_model(model, train_loader, val_loader)
+train_model(model, train_loader, None)
 
 def eval_model(model, loader):
     model.eval()
@@ -82,9 +104,10 @@ def eval_model(model, loader):
     y_pred=[]
 
     with torch.no_grad():
-        for xb,yb in loader:
-            preds= model(xb)
-            predicted = (preds>0.5).float()
+        for xb, yb in loader:
+            logits = model(xb)
+            probs = torch.sigmoid(logits)
+            predicted = (probs > 0.5).float()
             y_true.extend(yb.squeeze().numpy())
             y_pred.extend(predicted.squeeze().numpy())
     
@@ -93,3 +116,34 @@ def eval_model(model, loader):
     print("Classification Report:\n", classification_report(y_true,y_pred))
 
 eval_model(model, test_loader)
+
+### Submission ###
+
+test_data = pd.read_csv('./Titanic/Data/test.csv')
+passenger_ids = test_data['PassengerId']
+
+test_data['Sex'] = test_data['Sex'].map({'male': 0, 'female': 1})
+test_data['Age'].fillna(data['Age'].mean(), inplace=True)   
+test_data['Fare'].fillna(data['Fare'].mean(), inplace=True) 
+test_data['FamilySize'] = test_data['SibSp'] + test_data['Parch'] + 1
+test_data['Solo'] = (test_data['FamilySize'] == 1).astype(int)
+
+
+
+X_kaggle_test = test_data[features].values
+X_kaggle_test = scaler.transform(test_data[features].values)
+X_kaggle_tensor = torch.tensor(X_kaggle_test, dtype=torch.float32)
+
+model.eval()
+with torch.no_grad():
+    logits=model(X_kaggle_tensor)
+    probs = torch.sigmoid(logits)
+    preds = (probs>0.5).int().numpy().flatten()
+
+submission=pd.DataFrame({
+    'PassengerId': passenger_ids,
+    'Survived': preds
+
+})
+submission.to_csv('submission.csv',index=False)
+print("submission.csv saved")
