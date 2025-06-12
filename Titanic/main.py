@@ -6,6 +6,15 @@ from torch.utils.data import DataLoader, TensorDataset, random_split
 from sklearn.metrics import accuracy_score, f1_score, classification_report
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
+import random
+
+SEED = 42
+random.seed(SEED)
+np.random.seed(SEED)
+torch.manual_seed(SEED)
+torch.cuda.manual_seed_all(SEED)
+torch.backends.cudnn.deterministic = True
+torch.backends.cudnn.benchmark = False
 
 data = pd.read_csv("./Titanic/Data/train.csv")
 data = data[['Survived','Pclass','Sex','Age','SibSp','Parch','Fare']]
@@ -145,5 +154,5 @@ submission=pd.DataFrame({
     'Survived': preds
 
 })
-submission.to_csv('submission.csv',index=False)
+submission.to_csv('./Titanic/submission.csv',index=False)
 print("submission.csv saved")
