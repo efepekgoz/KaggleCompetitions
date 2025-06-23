@@ -1,2 +1,2 @@
-Titanic/Data/*
+**/Data/*
 !Titanic/Data/.gitkeep
